@@ -1,184 +1,287 @@
 # NeuroGAN
 
-NeuroGAN is a research-oriented PyTorch implementation of generative adversarial networks (GANs) for image synthesis and experimentation. The repository provides modular, extensible code for training, sampling, and evaluating popular GAN variants, plus utilities for datasets, logging, and checkpointing.
+NeuroGAN is a research-focused toolkit for training, evaluating, and using Generative Adversarial Networks (GANs) on neuroscience data (e.g., EEG, MEG, fMRI, calcium imaging, or neural spike trains). It provides configurable model architectures, training/evaluation scripts, and utilities to streamline experiments for data augmentation, simulation, and generative modeling research in computational neuroscience.
 
-Key goals:
-- Easy experimentation with architectures and loss functions
-- Reproducible training and evaluation
-- Clear examples for sampling and model evaluation (FID/IS)
+> NOTE: This README is a project-oriented template. Update dataset paths, config examples, model descriptions, and metrics to match the exact implementation and API in this repository.
 
---------------------------------------------------------------------------------
-Table of contents
-- Features
-- Repository structure
-- Getting started
-- Training
-- Sampling / Inference
-- Evaluation
-- Configuration & hyperparameters
-- Checkpoints & resuming
-- Common workflows
-- Tips & troubleshooting
-- Contributing
-- License & citation
+## Table of Contents
+- [Key features](#key-features)
+- [Quick links](#quick-links)
+- [Installation](#installation)
+- [Requirements](#requirements)
+- [Getting started (Quickstart)](#getting-started-quickstart)
+  - [Prepare data](#prepare-data)
+  - [Training](#training)
+  - [Sampling / Generation](#sampling--generation)
+  - [Evaluation](#evaluation)
+- [Python API example](#python-api-example)
+- [Supported models & architectures](#supported-models--architectures)
+- [Datasets and preprocessing](#datasets-and-preprocessing)
+- [Training details & configuration](#training-details--configuration)
+- [Evaluation metrics](#evaluation-metrics)
+- [Reproducibility & checkpoints](#reproducibility--checkpoints)
+- [Contributing](#contributing)
+- [Citation](#citation)
+- [License](#license)
+- [Contact](#contact)
 
---------------------------------------------------------------------------------
-Features
-- Modular model code (Generator, Discriminator) with clear interfaces
-- Support for common GAN losses (vanilla, WGAN-GP, hinge)
-- Data loaders for common image datasets (CIFAR-10, CelebA, custom)
-- Scripted training loop with logging (TensorBoard) and checkpointing
-- Utilities for computing FID (and optionally IS)
-- Example configs for baseline experiments
+## Key features
+- Config-driven experiments (JSON / YAML configs)
+- Modular model implementations (vanilla GAN, DCGAN-style, WGAN-GP, conditional variants)
+- Data loaders and preprocessors for common neuroscience formats
+- Checkpointing, logging, and TensorBoard support
+- Scripted CLI for common workflows (train, eval, sample)
+- Evaluation utilities for likelihood-free metrics and domain-specific measures
 
---------------------------------------------------------------------------------
-Repository structure
-- configs/           — example config files or hyperparameter presets
-- datasets/          — dataset wrappers and preprocessing utilities
-- models/            — Generator, Discriminator, and model helpers
-- trainers/          — training loops and scheduler utilities
-- utils/             — logging, checkpointing, metrics (FID), seeding
-- scripts/
-  - train.py         — entrypoint for training experiments
-  - sample.py        — generate images from checkpoints
-  - evaluate.py      — compute FID/IS against a dataset
-- docs/              — notes, experiments, and usage examples
-- tests/             — unit / integration tests (if present)
+## Quick links
+- Repository: https://github.com/vansh7nvc/NeuroGAN
+- Example configs: `configs/` (edit and reuse)
+- Training script: `scripts/train.py`
+- Sampling script: `scripts/sample.py`
+- Evaluation script: `scripts/evaluate.py`
 
---------------------------------------------------------------------------------
-Getting started (quick)
-Prerequisites
+(Adjust the above file paths if the files live somewhere else in the repo.)
+
+## Installation
+
+Recommended: create a Python virtual environment (venv or conda). Example using conda:
+
+```bash
+conda create -n neurogan python=3.10 -y
+conda activate neurogan
+pip install -r requirements.txt
+# Or, for editable installation:
+pip install -e .
+```
+
+If you don't have a requirements file, typical packages include:
+- PyTorch (or TensorFlow, depending on implementation)
+- numpy, scipy, scikit-learn
+- matplotlib, seaborn
+- pandas
+- tqdm
+- tensorboard (optional)
+- h5py / nibabel (for neuroimaging formats)
+
+Install CUDA-capable PyTorch if you plan to train on GPU:
+https://pytorch.org/get-started/locally/
+
+## Requirements
+
+Minimum:
 - Python 3.8+
-- PyTorch (installed with CUDA support if using GPU)
-- CUDA-enabled GPU recommended for training
+- PyTorch 1.10+ (or TensorFlow 2.x if applicable)
+- CUDA 11.x (optional, for GPU acceleration)
 
-Quick install
-1. Clone the repo:
-   git clone https://github.com/vansh7nvc/NeuroGAN.git
-   cd NeuroGAN
+Refer to `requirements.txt` for an exact list (create one if missing).
 
-2. (Recommended) Create a virtual environment:
-   python -m venv .venv
-   source .venv/bin/activate  # macOS / Linux
-   .venv\Scripts\activate     # Windows
+## Getting started (Quickstart)
 
-3. Install dependencies:
-   pip install -r requirements.txt
-   # If requirements.txt is not present, install PyTorch and common packages:
-   pip install torch torchvision tensorboard numpy matplotlib tqdm pillow
+### Prepare data
+1. Place your dataset in a directory such as `data/<dataset_name>/`.
+2. For neuroimaging files (NIfTI), consider converting to tensors per subject/scan and normalizing.
+3. For time series (EEG/MEG), segment into windows, baseline-correct, and standardize.
 
-4. Download / prepare datasets:
-   - For example, to use CIFAR-10 the dataset loader will download automatically
-     (or provide a path to your dataset in the config).
+Example expected structure:
+```
+data/
+  eeg_dataset/
+    train/
+      subject01.npy
+      subject02.npy
+      ...
+    val/
+      subjectXX.npy
+```
 
---------------------------------------------------------------------------------
-Training
-Basic training command:
-python scripts/train.py --config configs/cifar10_base.yaml --outdir runs/exp1
+Adjust preprocessing in `data/` utilities or write a custom DataLoader.
 
-Common CLI options:
-- --config : path to YAML/JSON config with hyperparameters
-- --data   : dataset name or path
-- --batch-size
-- --epochs
-- --gpus
+### Training
 
-What the trainer does:
-- Loads model, optimizer, and schedulers from config
-- Prepares dataloader with augmentations / normalization
-- Runs training loop with per-epoch evaluation & checkpointing
-- Logs metrics to TensorBoard and a CSV file
+A typical training command uses a config file:
 
-Example config keys (configs/cifar10_base.yaml):
-- model:
-    generator:
-      z_dim: 128
-      hidden: 256
-    discriminator:
-      hidden: 256
-- optim:
-    g_lr: 2e-4
-    d_lr: 2e-4
-- loss: "hinge"      # options: vanilla, wgan-gp, hinge
-- data:
-    name: "cifar10"
-    image_size: 32
-- training:
-    batch_size: 64
-    epochs: 200
-    grad_penalty_weight: 10.0   # for WGAN-GP
+```bash
+python scripts/train.py --config configs/eeg_wgan_gp.yaml --data-dir data/eeg_dataset --out-dir outputs/eeg_wgan
+```
 
---------------------------------------------------------------------------------
-Sampling / Inference
-Generate samples from a checkpoint:
-python scripts/sample.py --checkpoint path/to/checkpoint.pt --num-samples 64 --outdir samples/exp1
+Important flags:
+- --config : path to YAML/JSON configuration with hyperparameters
+- --data-dir : root data directory
+- --out-dir : where checkpoints / logs will be stored
+- --device : `cuda` or `cpu`
 
-Options include:
-- sample fixed seeds (for reproducibility)
-- sample with truncation (if using style-based architectures)
-- save grid or individual images
+Example minimal config fields:
+```yaml
+model:
+  type: wgan-gp
+  latent_dim: 128
+  generator:
+    channels: [256, 128, 64]
+  discriminator:
+    channels: [64, 128, 256]
 
---------------------------------------------------------------------------------
-Evaluation
-Compute FID (Fréchet Inception Distance) and optionally Inception Score:
-python scripts/evaluate.py --checkpoint path/to/checkpoint.pt --dataset cifar10 --num-samples 5000
+training:
+  batch_size: 64
+  epochs: 200
+  lr_g: 2e-4
+  lr_d: 2e-4
+  gp_lambda: 10
+  n_critic: 5
+```
 
-Notes:
-- FID requires a reference set of real images; scripts either use the test split or precomputed statistics.
-- For accurate FID, generate at least several thousand samples.
-- If you need exact reproductions of literature scores, follow dataset preprocessing and image resizing used in the original paper.
+### Sampling / Generation
 
---------------------------------------------------------------------------------
-Configuration & hyperparameters
-- All training-relevant hyperparameters should be set in config files to ensure reproducibility.
-- Use deterministic seeds (see utils/seed.py) when comparing experiment runs.
-- Recommended defaults (good starting points):
-  - z_dim: 128
-  - batch_size: 64 (increase with GPU memory)
-  - g_lr/d_lr: 2e-4
-  - optimizer: Adam(betas=(0.5, 0.999))
-  - training epochs: 100-200 (dataset dependent)
+To generate samples from a trained checkpoint:
 
---------------------------------------------------------------------------------
-Checkpoints & resuming
-- Checkpoints store model state_dicts, optimizer states, epoch, and RNG seeds.
-- By default checkpoints are saved to runs/{experiment}/checkpoints.
-- Resume training:
-  python scripts/train.py --config ... --resume runs/exp1/checkpoints/ckpt_last.pt
+```bash
+python scripts/sample.py --ckpt outputs/eeg_wgan/checkpoint_latest.pt --num-samples 100 --out-dir outputs/eeg_wgan/samples
+```
 
---------------------------------------------------------------------------------
-Common workflows
-- Quick prototyping: use low resolution (32x32), small batch sizes and fewer epochs.
-- Ablation: change only one config parameter at a time and log experiment metadata.
-- Large runs: use a dedicated machine with multiple GPUs and set distributed options in the config.
+You can conditionally generate (if using cGAN) by passing labels or conditioning tensors.
 
---------------------------------------------------------------------------------
-Tips & troubleshooting
-- Out-of-memory: lower batch size, use gradient accumulation, or use a smaller model.
-- Training unstable: try switching to hinge loss, add spectral normalization, tune learning rates, or increase discriminator updates per generator update.
-- Low-quality samples: check dataset preprocessing, normalization ([-1,1] vs [0,1]), and seed consistency.
+### Evaluation
 
---------------------------------------------------------------------------------
-Contributing
-Contributions are welcome. Suggested steps:
-1. Open an issue to discuss major changes before implementing.
-2. Fork the repo and create a feature branch.
-3. Keep commits small and focused. Add tests for new functionality where appropriate.
-4. Open a pull request describing changes and motivation.
+Evaluate generated samples against held-out real data:
 
---------------------------------------------------------------------------------
-License
-This project is released under the MIT License. See LICENSE for details.
+```bash
+python scripts/evaluate.py --real-dir data/eeg_dataset/val --fake-dir outputs/eeg_wgan/samples --metrics fid mmd
+```
 
---------------------------------------------------------------------------------
-Citing NeuroGAN
-If you use this code in published research, please cite the repository and any relevant papers associated with architectures or metrics you used.
+Supported metrics: FID, MMD, classification-based metrics, domain-specific signal measures (SNR, spectral power differences).
 
---------------------------------------------------------------------------------
-Acknowledgements
-This implementation draws on common GAN research and open-source implementations. See HISTORY.md or docs/ for more detail on references and related work.
+## Python API example
 
---------------------------------------------------------------------------------
-Contact
-Maintainer: vansh7nvc
-GitHub: https://github.com/vansh7nvc/NeuroGAN
+Use models and utilities directly in code:
+
+```python
+from neurogan.models import Generator, Discriminator
+from neurogan.trainer import Trainer
+from neurogan.data import NeuroDataset, get_dataloader
+
+# dataset & dataloader
+dataset = NeuroDataset("data/eeg_dataset/train")
+loader = get_dataloader(dataset, batch_size=64, shuffle=True)
+
+# models
+G = Generator(latent_dim=128)
+D = Discriminator()
+
+# trainer
+trainer = Trainer(G, D, loader, device="cuda")
+trainer.train(epochs=200, out_dir="outputs/eeg_wgan")
+```
+
+(Adjust import paths to the actual package layout.)
+
+## Supported models & architectures
+
+NeuroGAN is designed to be modular. Example supported variants:
+- Vanilla GAN
+- DCGAN-style (convolutional)
+- WGAN-GP (stable training with gradient penalty)
+- Conditional GAN (cGAN)
+- Style-based generators (experimental)
+- Autoregressive / sequential variants for time-series data
+
+Add or extend models in `neurogan/models/`.
+
+## Datasets and preprocessing
+
+Commonly used neuroscience datasets and formats:
+- EEG/MEG: .npy, .mat, or FIF files (MNE or custom loaders)
+- fMRI: NIfTI (.nii/.nii.gz) via nibabel
+- Calcium imaging: HDF5, TIFF stacks
+- Spiking data: sorted spike trains, binary rasters
+
+Preprocessing suggestions:
+- Bandpass filter for EEG/MEG (e.g., 1–40 Hz)
+- Downsample to reasonable sampling rate
+- Z-score or min-max normalization per channel
+- Segment long recordings into windows of fixed length
+
+Provide dataset-specific loader implementations and document expected shapes.
+
+## Training details & configuration
+
+- Save checkpoints periodically (e.g., every N epochs)
+- Log losses and metrics to TensorBoard or CSV for easy visualization
+- Use fixed noise vectors for visualizing training progression
+- Seed RNGs for reproducibility (torch.manual_seed, numpy.random.seed)
+
+Recommended hyperparameters (starting points):
+- latent_dim: 64–256
+- batch_size: 32–128 (depending on memory)
+- lr: 1e-4 – 2e-4 (Adam)
+- beta1: 0.0, beta2: 0.9 (for WGAN-GP)
+- gp_lambda (WGAN-GP): 10
+
+## Evaluation metrics
+
+Standard and domain-specific metrics:
+- Fréchet Inception Distance (FID) — if an Inception-like feature extractor exists for the domain
+- Maximum Mean Discrepancy (MMD)
+- Signal-to-Noise Ratio (SNR)
+- Spectral/Power measures (e.g., relative band power: theta/alpha/beta)
+- Classification accuracy using downstream task classifiers (i.e., are generated samples useful for augmentation?)
+- Visual / qualitative inspection (plot signals, power spectral density, topographic maps)
+
+Implement or adapt feature extractors for neuroscience modalities to compute FID-like scores.
+
+## Reproducibility & checkpoints
+
+- Checkpoint file format: model weights + optimizer states + training metadata (current epoch, config).
+- To resume training:
+```bash
+python scripts/train.py --config configs/eeg_wgan_gp.yaml --resume outputs/eeg_wgan/checkpoint_latest.pt
+```
+
+- Include deterministic options and log RNG seeds in checkpoint metadata.
+
+## Results
+
+Document quantitative and qualitative results here:
+- Example figure(s) showing real vs generated signals
+- Quantitative tables for FID/MMD and domain-specific metrics
+- Ablation study notes (latent dimension, model depth, loss variants)
+
+(Replace this section with your experiment outputs and plots.)
+
+## Contributing
+
+Contributions are welcome! Typical workflows:
+- Fork the repo and create a feature branch
+- Add tests (if applicable) and ensure style consistency
+- Create a clear PR describing the change and linking related issues
+
+Suggested contribution topics:
+- New dataset loaders
+- Additional GAN variants or loss functions
+- Evaluation metric implementations
+- Tutorials and example notebooks
+
+Please follow the repository's CONTRIBUTING.md (create one if absent) and code of conduct.
+
+## Citation
+
+If you use NeuroGAN in academic work, please cite this repository and any associated paper. Example BibTeX (edit when you have publication info):
+
+```bibtex
+@misc{NeuroGAN2025,
+  author = {Your Name and Collaborators},
+  title = {NeuroGAN: A GAN toolkit for neuroscience data},
+  year = {2025},
+  howpublished = {GitHub repository},
+  note = {https://github.com/vansh7nvc/NeuroGAN}
+}
+```
+
+## License
+
+This project is released under the MIT License. See LICENSE for details. (Change license if needed.)
+
+## Contact
+
+Maintainer: vansh7nvc  
+Repository: https://github.com/vansh7nvc/NeuroGAN
+
+For questions, issues, or feature requests, please open an issue on the repository.
